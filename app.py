@@ -4,14 +4,14 @@ import requests
 from flask import Flask, render_template_string, request, jsonify
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-import google.generativeai as genai
+from google import genai as google_genai
 
 app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
 
 # --- KONFIGURACJA KLIENTA GEMINI ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyB1U0Vhm1wLD6RbNovPhAHDJPB_2Yg6Rq4")
-genai.configure(api_key=GEMINI_API_KEY)
+client = google_genai.Client(api_key=GEMINI_API_KEY)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -125,7 +125,8 @@ HTML_TEMPLATE = """
 def debug_models():
     """Endpoint do debugowania dostępnych modeli"""
     try:
-        models = [m.name for m in genai.list_models()]
+        response = client.models.list()
+        models = [m.name for m in response.models]
         return jsonify({"available_models": models})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -180,8 +181,10 @@ def generate():
     
     try:
         # Używamy najnowszego dostępnego modelu
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
         
         text = response.text
         
