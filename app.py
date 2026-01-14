@@ -34,7 +34,7 @@ HTML_TEMPLATE = """
 <body class="container py-5">
     <div class="text-center mb-5">
         <h1 class="display-4 fw-bold">🤘 METAL <span style="color: #e62117;">AI</span></h1>
-        <p class="text-muted">Wersja 7.2 (Gemini API Fixed)</p>
+        <p class="text-muted">Wersja 7.2 (Gemini 2.5 Flash)</p>
     </div>
     
     <div id="news-feed">
@@ -121,16 +121,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/debug-models', methods=['GET'])
-def debug_models():
-    """Endpoint do debugowania dostępnych modeli"""
-    try:
-        response = client.models.list()
-        models = [m.name for m in response.models]
-        return jsonify({"available_models": models})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/')
 def index():
     all_news = []
@@ -164,7 +154,8 @@ def index():
 def debug_models():
     """Endpoint do debugowania dostępnych modeli"""
     try:
-        models = [m.name for m in genai.list_models()]
+        response = client.models.list()
+        models = [m.name for m in response.models]
         return jsonify({"available_models": models})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -180,7 +171,6 @@ def generate():
     )
     
     try:
-        # Używamy najnowszego dostępnego modelu
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt
