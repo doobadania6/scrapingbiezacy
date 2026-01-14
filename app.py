@@ -161,8 +161,8 @@ def generate():
     )
     
     try:
-        # Używamy poprawnej metody API
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Używamy modelu dostępnego na API v1
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
         
         text = response.text
