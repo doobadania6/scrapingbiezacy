@@ -1,41 +1,4 @@
-@app.route('/sources', methods=['GET', 'POST', 'DELETE'])
-def manage_sources():
-    """Zarządzaj źródłami scrapowania"""
-    try:
-        if request.method == 'GET':
-            sources = load_sources()
-            return jsonify({"sources": sources})
-        
-        elif request.method == 'POST':
-            data = request.json
-            url = data.get('url', '').strip()
-            domain = data.get('domain', '').strip()
-            
-            if not url or not domain:
-                return jsonify({"error": "URL i domain są wymagane"}), 400
-            
-            sources = load_sources()
-            # Sprawdź duplikaty
-            if any(s['domain'] == domain for s in sources):
-                return jsonify({"error": "Źródło z taką domeną już istnieje"}), 400
-            
-            sources.append({"url": url, "domain": domain})
-            save_sources(sources)
-            return jsonify({"success": True, "sources": sources})
-        
-        elif request.method == 'DELETE':
-            data = request.json
-            domain = data.get('domain', '').strip()
-            
-            sources = load_sources()
-            sources = [s for s in sources if s['domain'] != domain]
-            save_sources(sources)
-            return jsonify({"success": True, "sources": sources})
-    
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/publish', methods=['POST'])import os
+import os
 import json
 import requests
 from flask import Flask, render_template_string, request, jsonify
@@ -50,7 +13,14 @@ load_dotenv()
 app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
 
-# Przechowuj źródła w pamięci (lub w pliku)
+# --- KONFIGURACJA KLIENTA GEMINI ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("❌ GEMINI_API_KEY nie znaleziony w .env lub zmiennych środowiskowych!")
+
+client = google_genai.Client(api_key=GEMINI_API_KEY)
+
+# Przechowuj źródła w pliku JSON
 SOURCES_FILE = "sources.json"
 
 def load_sources():
@@ -60,10 +30,7 @@ def load_sources():
             with open(SOURCES_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except:
-            return [
-                {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
-                {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
-            ]
+            pass
     return [
         {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
         {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
@@ -73,13 +40,6 @@ def save_sources(sources):
     """Zapisz źródła do pliku JSON"""
     with open(SOURCES_FILE, 'w', encoding='utf-8') as f:
         json.dump(sources, f, ensure_ascii=False, indent=2)
-
-# --- KONFIGURACJA KLIENTA GEMINI ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("❌ GEMINI_API_KEY nie znaleziony w .env lub zmiennych środowiskowych!")
-
-client = google_genai.Client(api_key=GEMINI_API_KEY)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -336,6 +296,25 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
+    <div class="settings-panel" id="settings-panel">
+        <button class="settings-close" onclick="toggleSettings()">✕</button>
+        <h2>⚙️ Źródła</h2>
+        
+        <div style="margin-bottom: 24px;">
+            <h3 style="font-size: 1rem; color: #aaa; margin-bottom: 12px;">Aktywne źródła:</h3>
+            <div id="sources-list"></div>
+        </div>
+        
+        <div class="source-form">
+            <h3 style="font-size: 1rem; color: #64c8ff; margin-bottom: 12px;">Dodaj nowe źródło:</h3>
+            <input type="text" id="new-url" placeholder="https://example.com/news/">
+            <input type="text" id="new-domain" placeholder="example.com">
+            <button onclick="addSource()">+ DODAJ ŹRÓDŁO</button>
+        </div>
+    </div>
+    
+    <button class="settings-btn" onclick="toggleSettings()">⚙️</button>
+
     <div class="header">
         <h1>METAL AI</h1>
         <p>ADVANCED CONTENT GENERATOR</p>
@@ -483,8 +462,6 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Załaduj źródła na starcie
-        loadSources();
         async function generateNews(id) {
             const btn = event.target;
             const originalContent = document.getElementById(`original-${id}`).innerText;
@@ -544,6 +521,8 @@ HTML_TEMPLATE = """
                 status.classList.add('status-error');
             }
         }
+
+        loadSources();
     </script>
 </body>
 </html>
@@ -559,10 +538,8 @@ def index():
         try:
             r = requests.get(s["url"], headers=headers, timeout=8)
             soup = BeautifulSoup(r.text, 'html.parser')
-            # Szuka wszystkich linkówów do artykułów (nie ograniczaj do 3)
             links = [urljoin(s["url"], a['href']) for a in soup.find_all('a', href=True) 
                      if s["domain"] in a['href'] and len(a['href']) > 45 and "page" not in a['href']]
-            # Usuń duplikaty i ogranicz do 10
             links = list(dict.fromkeys(links))[:10]
             for l in links:
                 try:
@@ -578,6 +555,42 @@ def index():
             continue
     return render_template_string(HTML_TEMPLATE, articles=all_news)
 
+@app.route('/sources', methods=['GET', 'POST', 'DELETE'])
+def manage_sources():
+    """Zarządzaj źródłami scrapowania"""
+    try:
+        if request.method == 'GET':
+            sources = load_sources()
+            return jsonify({"sources": sources})
+        
+        elif request.method == 'POST':
+            data = request.json
+            url = data.get('url', '').strip()
+            domain = data.get('domain', '').strip()
+            
+            if not url or not domain:
+                return jsonify({"error": "URL i domain są wymagane"}), 400
+            
+            sources = load_sources()
+            if any(s['domain'] == domain for s in sources):
+                return jsonify({"error": "Źródło z taką domeną już istnieje"}), 400
+            
+            sources.append({"url": url, "domain": domain})
+            save_sources(sources)
+            return jsonify({"success": True, "sources": sources})
+        
+        elif request.method == 'DELETE':
+            data = request.json
+            domain = data.get('domain', '').strip()
+            
+            sources = load_sources()
+            sources = [s for s in sources if s['domain'] != domain]
+            save_sources(sources)
+            return jsonify({"success": True, "sources": sources})
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/debug-models', methods=['GET'])
 def debug_models():
     """Endpoint do debugowania dostępnych modeli"""
@@ -587,6 +600,8 @@ def debug_models():
         return jsonify({"available_models": models})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/generate', methods=['POST'])
 def generate():
     data = request.json
     prompt = (
@@ -605,7 +620,6 @@ def generate():
         
         text = response.text
         
-        # Bezpieczne ekstraktowanie JSON z odpowiedzi
         if "{" in text:
             start = text.find("{")
             end = text.rfind("}") + 1
@@ -638,4 +652,6 @@ def publish():
             return jsonify({"error": f"WP error: {r.status_code}"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=False)
