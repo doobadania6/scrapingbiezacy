@@ -15,47 +15,37 @@ HTML_TEMPLATE = """
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Metal News Engine v4</title>
+    <title>Metal News Engine v5</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #0b0b0b; color: #dcdcdc; font-family: 'Segoe UI', sans-serif; }
-        .article-card { background: #161616; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; margin-bottom: 25px; }
-        .source-label { font-size: 0.7rem; color: #ff4d4d; font-weight: bold; text-transform: uppercase; }
-        .ai-output-box { display: none; background: #1d1d1d; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-top: 15px; }
-        textarea { background: #000 !important; color: #00ff00 !important; font-family: monospace; border: 1px solid #444 !important; }
-        .btn-gemini { background-color: #4b0082; border: none; color: white; }
+        body { background-color: #0d0d0d; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
+        .article-card { background: #1a1a1a; border-radius: 12px; padding: 20px; margin-bottom: 25px; border: 1px solid #333; }
+        .ai-box { display: none; background: #222; border: 1px solid #444; padding: 15px; border-radius: 8px; margin-top: 15px; }
+        textarea { background: #000 !important; color: #0f0 !important; font-family: monospace; border: 1px solid #555 !important; }
+        .btn-gemini { background-color: #6200ea; border: none; color: white; padding: 8px 20px; }
+        .btn-gemini:hover { background-color: #3700b3; }
     </style>
 </head>
 <body class="container py-5">
-    <h1 class="text-center mb-5">🤘 METAL <span style="color: #ff4d4d;">AGRESSIVE</span> ENGINE</h1>
+    <h1 class="text-center mb-5">🤘 METAL <span style="color: #ff3d00;">ENGINE</span> V5</h1>
     
-    <div class="text-center mb-4">
-        <button onclick="location.reload()" class="btn btn-outline-danger">PONÓW SKANOWANIE</button>
-    </div>
-
     <div id="news-feed">
-        {% if not articles %}
-            <div class="alert alert-dark text-center">Brak nowych artykułów. Spróbuj odświeżyć za chwilę.</div>
-        {% endif %}
-        
         {% for art in articles %}
         <div class="article-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="source-label">{{ art.source }}</span>
-                <a href="{{ art.url }}" target="_blank" class="text-muted small">Oryginał ↗</a>
-            </div>
-            <h3 class="mt-2" id="title-{{ loop.index }}">{{ art.title }}</h3>
+            <span class="badge bg-dark text-danger mb-2">{{ art.source }}</span>
+            <h3 id="title-{{ loop.index }}">{{ art.title }}</h3>
+            
             <div style="display:none" id="raw-{{ loop.index }}">{{ art.raw_content }}</div>
             
-            <button class="btn btn-gemini btn-sm" onclick="askGemini({{ loop.index }})">✨ Generuj przez Gemini</button>
+            <button class="btn btn-gemini btn-sm mt-2" onclick="askGemini({{ loop.index }})">✨ PRZERÓB PRZEZ AI</button>
             
-            <div class="ai-output-box" id="ai-box-{{ loop.index }}">
-                <label class="small text-info">Tytuł:</label>
-                <input type="text" id="ai-title-{{ loop.index }}" class="form-control mb-2 bg-dark text-white">
-                <label class="small text-info">Treść (HTML):</label>
-                <textarea id="ai-content-{{ loop.index }}" class="form-control" rows="6"></textarea>
-                <button class="btn btn-success btn-sm mt-3" onclick="publishToWP({{ loop.index }})">🚀 Wyślij do WP</button>
-                <span id="status-{{ loop.index }}" class="ms-2"></span>
+            <div class="ai-box" id="ai-box-{{ loop.index }}">
+                <label class="small text-muted">Nowy Tytuł:</label>
+                <input type="text" id="ai-title-{{ loop.index }}" class="form-control mb-2 bg-dark text-white border-secondary">
+                <label class="small text-muted">Treść (HTML):</label>
+                <textarea id="ai-content-{{ loop.index }}" class="form-control" rows="8"></textarea>
+                <button class="btn btn-success btn-sm mt-3" onclick="publishToWP({{ loop.index }})">🚀 WYŚLIJ DO WP</button>
+                <span id="status-{{ loop.index }}" class="ms-2 small"></span>
             </div>
         </div>
         {% endfor %}
@@ -65,14 +55,14 @@ HTML_TEMPLATE = """
         const GEMINI_KEY = "{{ gemini_key }}";
 
         async function askGemini(id) {
-            const btn = document.querySelector(`#ai-box-${id}`).previousElementSibling;
+            const btn = document.querySelector(`#art-card-${id} .btn-gemini`) || event.target;
             const title = document.getElementById(`title-${id}`).innerText;
-            const text = document.getElementById(`raw-${id}`).innerText;
+            const text = document.getElementById(`raw-${id}`).innerText || title; // Fallback do tytułu
             
             btn.disabled = true;
-            btn.innerText = "⏳ Pracuję...";
+            btn.innerHTML = "⏳ Gemini przetwarza...";
 
-            const prompt = `Jesteś redaktorem portalu o metalu. Przeredaguj ten news: "${title}". Treść: "${text}". Wynik oddaj jako JSON: {"title": "tytuł", "content": "html"}`;
+            const prompt = `Jesteś redaktorem portalu metalowego. Na podstawie newsa: "${title}" i treści: "${text.substring(0,1000)}", przygotuj unikalny news. Zwróć wynik WYŁĄCZNIE jako czysty JSON: {"title": "fajny tytuł", "content": "tresc w html"}`;
 
             try {
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
@@ -82,33 +72,38 @@ HTML_TEMPLATE = """
                 });
 
                 const data = await response.json();
-                const rawResult = data.candidates[0].content.parts[0].text;
-                const cleanJson = rawResult.replace(/```json|```/g, "").trim();
-                const final = JSON.parse(cleanJson);
+                let resultText = data.candidates[0].content.parts[0].text;
+                
+                // Super-czyszczenie JSONa
+                resultText = resultText.replace(/```json/g, "").replace(/```/g, "").trim();
+                const final = JSON.parse(resultText);
 
                 document.getElementById(`ai-box-${id}`).style.display = "block";
                 document.getElementById(`ai-title-${id}`).value = final.title;
                 document.getElementById(`ai-content-${id}`).value = final.content;
-                btn.innerText = "✅ Gotowe";
+                btn.innerHTML = "✅ Gotowe";
             } catch (e) {
-                alert("Błąd Gemini. Spróbuj jeszcze raz.");
+                console.error("Błąd Gemini:", e);
+                alert("Wystąpił błąd AI. Sprawdź konsolę (F12) lub spróbuj ponownie.");
                 btn.disabled = false;
-                btn.innerText = "❌ Ponów";
+                btn.innerHTML = "❌ Błąd (Ponów)";
             }
         }
 
         async function publishToWP(id) {
             const status = document.getElementById(`status-${id}`);
             status.innerText = "Wysyłanie...";
-            const res = await fetch('/publish', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    ai_title: document.getElementById(`ai-title-${id}`).value,
-                    ai_content: document.getElementById(`ai-content-${id}`).value
-                })
-            });
-            status.innerText = res.ok ? "✅ Sukces!" : "❌ Błąd!";
+            try {
+                const res = await fetch('/publish', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        ai_title: document.getElementById(`ai-title-${id}`).value,
+                        ai_content: document.getElementById(`ai-content-${id}`).value
+                    })
+                });
+                status.innerText = res.ok ? "✅ Wysłano!" : "❌ Błąd WP";
+            } catch (e) { status.innerText = "❌ Błąd sieci"; }
         }
     </script>
 </body>
@@ -119,7 +114,6 @@ HTML_TEMPLATE = """
 def index():
     all_news = []
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'}
-    
     sources = [
         {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
         {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
@@ -127,44 +121,28 @@ def index():
     
     for s in sources:
         try:
-            print(f"Próba scrapowania: {s['domain']}")
             r = requests.get(s["url"], headers=headers, timeout=10)
             soup = BeautifulSoup(r.text, 'html.parser')
-            
-            # Pobieramy wszystkie linki, które wyglądają jak artykuły
-            # Filtrujemy te, które są za krótkie lub są stronami kategorii
             links = []
             for a in soup.find_all('a', href=True):
                 href = a['href']
-                if s["domain"] in href and len(href) > 35 and "/page/" not in href and "category" not in href:
+                if s["domain"] in href and len(href) > 40 and "/page/" not in href:
                     links.append(urljoin(s["url"], href))
             
-            # Unikalne linki, bierzemy pierwsze 3
-            for l in list(dict.fromkeys(links))[:3]:
+            for l in list(dict.fromkeys(links))[:4]:
                 try:
                     res = requests.get(l, headers=headers, timeout=7)
                     asoup = BeautifulSoup(res.text, 'html.parser')
-                    
-                    # Szukamy tytułu w H1
                     title = asoup.find('h1').get_text(strip=True) if asoup.find('h1') else None
                     if not title: continue
                     
-                    # Agresywne szukanie treści - bierzemy po prostu największy blok tekstu
-                    # lub standardowy tag <article>
-                    content_tag = asoup.find('article') or asoup.find('main') or asoup.find('div', class_='entry-content')
-                    content = ""
-                    if content_tag:
-                        # Usuwamy zbędne elementy
-                        for tag in content_tag(['script', 'style', 'nav', 'aside', 'footer']): tag.decompose()
-                        content = content_tag.get_text(separator=' ', strip=True)[:1000]
+                    # Szukanie treści - różne selektory
+                    content_tag = asoup.find('article') or asoup.find('div', class_='entry-content') or asoup.find('div', class_='td-post-content')
+                    content = content_tag.get_text(separator=' ', strip=True) if content_tag else "Brak treści źródłowej (użyj tytułu do generowania)"
                     
-                    if title and len(content) > 100:
-                        all_news.append({"title": title, "raw_content": content, "url": l, "source": s["domain"]})
-                except Exception as e:
-                    print(f"Błąd artykułu {l}: {e}")
-                    continue
-        except Exception as e:
-            print(f"Błąd źródła {s['domain']}: {e}")
+                    all_news.append({"title": title, "raw_content": content[:1500], "url": l, "source": s["domain"]})
+                except: continue
+        except: continue
             
     return render_template_string(HTML_TEMPLATE, articles=all_news, gemini_key=GEMINI_API_KEY)
 
