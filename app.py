@@ -5,12 +5,19 @@ from flask import Flask, render_template_string, request, jsonify
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from google import genai as google_genai
+from dotenv import load_dotenv
+
+# Załaduj zmienne z pliku .env
+load_dotenv()
 
 app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
 
 # --- KONFIGURACJA KLIENTA GEMINI ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyB1U0Vhm1wLD6RbNovPhAHDJPB_2Yg6Rq4")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("❌ GEMINI_API_KEY nie znaleziony w .env lub zmiennych środowiskowych!")
+
 client = google_genai.Client(api_key=GEMINI_API_KEY)
 
 HTML_TEMPLATE = """
