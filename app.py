@@ -4,15 +4,14 @@ import requests
 from flask import Flask, render_template_string, request, jsonify
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from google import genai  # Wymaga google-genai w requirements.txt
+import google.generativeai as genai
 
 app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
 
-# --- KONFIGURACJA KLIENTA (Wymuszenie wersji v1) ---
-GEMINI_API_KEY = "AIzaSyB1U0Vhm1wLD6RbNovPhAHDJPB_2Yg6Rq4"
-# Wymuszamy api_version='v1', aby uniknąć błędów 404 związanych z wersją beta
-client = genai.Client(api_key=GEMINI_API_KEY, http_options={'api_version': 'v1'})
+# --- KONFIGURACJA KLIENTA GEMINI ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyB1U0Vhm1wLD6RbNovPhAHDJPB_2Yg6Rq4")
+genai.configure(api_key=GEMINI_API_KEY)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -35,7 +34,7 @@ HTML_TEMPLATE = """
 <body class="container py-5">
     <div class="text-center mb-5">
         <h1 class="display-4 fw-bold">🤘 METAL <span style="color: #e62117;">AI</span></h1>
-        <p class="text-muted">Wersja 7.2 (Stable API v1)</p>
+        <p class="text-muted">Wersja 7.2 (Gemini API Fixed)</p>
     </div>
     
     <div id="news-feed">
@@ -145,8 +144,10 @@ def index():
                     c_tag = asoup.find('article') or asoup.find('div', class_='entry-content') or asoup.find('div', class_='td-post-content')
                     c = c_tag.get_text(separator=' ', strip=True)[:1500] if c_tag else "Brak treści."
                     all_news.append({"title": t, "raw_content": c, "source": s["domain"]})
-                except: continue
-        except: continue
+                except: 
+                    continue
+        except: 
+            continue
     return render_template_string(HTML_TEMPLATE, articles=all_news)
 
 @app.route('/generate', methods=['POST'])
@@ -160,18 +161,23 @@ def generate():
     )
     
     try:
-        # Próba ze stabilnym modelem 1.5-flash
-        try:
-            response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
-        except Exception:
-            # Fallback na gemini-pro, jeśli flash jest niedostępny
-            response = client.models.generate_content(model="gemini-pro", contents=prompt)
-            
+        # Używamy poprawnej metody API
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        
         text = response.text
+        
+        # Bezpieczne ekstraktowanie JSON z odpowiedzi
         if "{" in text:
-            text = text[text.find("{"):text.rfind("}")+1]
-            
-        return jsonify(json.loads(text))
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            text = text[start:end]
+        
+        result = json.loads(text)
+        return jsonify(result)
+        
+    except json.JSONDecodeError:
+        return jsonify({"error": "Błąd parsowania JSON z odpowiedzi AI"}), 500
     except Exception as e:
         return jsonify({"error": f"Błąd AI: {str(e)}"}), 500
 
@@ -179,12 +185,21 @@ def generate():
 def publish():
     data = request.json
     auth = (os.environ.get("WP_USER"), os.environ.get("WP_APP_PASSWORD"))
+    wp_url = os.environ.get("WP_URL")
+    
+    if not wp_url:
+        return jsonify({"error": "WP_URL nie skonfigurowany"}), 500
+    
     payload = {"title": data['title'], "content": data['content'], "status": "draft"}
+    
     try:
-        r = requests.post(os.environ.get("WP_URL"), auth=auth, json=payload, timeout=10)
-        return jsonify({"ok": True}) if r.status_code == 201 else (jsonify({"error": "WP error"}), 400)
+        r = requests.post(wp_url, auth=auth, json=payload, timeout=10)
+        if r.status_code == 201:
+            return jsonify({"ok": True})
+        else:
+            return jsonify({"error": f"WP error: {r.status_code}"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=PORT)
+    app.run(host='0.0.0.0', port=PORT, debug=False)
