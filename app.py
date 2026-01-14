@@ -12,8 +12,10 @@ PORT = int(os.environ.get("PORT", 10000))
 # --- KONFIGURACJA AI ---
 GEMINI_API_KEY = "AIzaSyB1U0Vhm1wLD6RbNovPhAHDJPB_2Yg6Rq4"
 genai.configure(api_key=GEMINI_API_KEY)
-# Ustawienie modelu z niskim progiem blokowania (ważne przy newsach o metalu)
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Używamy pełnej ścieżki modelu, aby uniknąć błędu 404
+MODEL_NAME = 'models/gemini-1.5-flash-latest'
+model = genai.GenerativeModel(MODEL_NAME)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -21,31 +23,25 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal News Engine v6</title>
+    <title>Metal News Engine v6.2</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #0d0d0d; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
-        .article-card { background: #1a1a1a; border-radius: 12px; padding: 20px; margin-bottom: 25px; border: 1px solid #333; transition: 0.3s; }
-        .article-card:hover { border-color: #ff3d00; }
+        .article-card { background: #1a1a1a; border-radius: 12px; padding: 20px; margin-bottom: 25px; border: 1px solid #333; }
         .ai-box { display: none; background: #222; border: 1px solid #444; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #6200ea; }
-        textarea { background: #000 !important; color: #0f0 !important; font-family: monospace; border: 1px solid #555 !important; font-size: 0.85rem; }
+        textarea { background: #000 !important; color: #0f0 !important; font-family: monospace; border: 1px solid #555 !important; }
         .btn-gemini { background-color: #6200ea; border: none; color: white; font-weight: bold; }
-        .btn-gemini:disabled { background-color: #444; }
         .badge-source { font-size: 0.7rem; background: #333; color: #ff3d00; padding: 5px 10px; border-radius: 5px; text-transform: uppercase; }
     </style>
 </head>
 <body class="container py-5">
     <header class="text-center mb-5">
         <h1 class="display-5 fw-bold">🤘 METAL NEWS <span style="color: #ff3d00;">AI</span></h1>
-        <p class="text-muted">System redakcyjny v6 (Server-Side processing)</p>
+        <p class="text-muted">Wersja 6.2 (Stabilny Model Flash)</p>
         <button onclick="location.reload()" class="btn btn-outline-light btn-sm">Skanuj portale</button>
     </header>
     
     <div id="news-feed">
-        {% if not articles %}
-            <div class="alert alert-dark text-center">Brak nowych newsów. Spróbuj odświeżyć.</div>
-        {% endif %}
-        
         {% for art in articles %}
         <div class="article-card">
             <div class="d-flex justify-content-between align-items-center mb-2">
@@ -66,10 +62,8 @@ HTML_TEMPLATE = """
                     <label class="small text-muted">Treść (HTML):</label>
                     <textarea id="ai-content-{{ loop.index }}" class="form-control" rows="10"></textarea>
                 </div>
-                <div class="d-flex align-items-center">
-                    <button class="btn btn-success btn-sm" onclick="publishToWP({{ loop.index }})">🚀 WYŚLIJ DO WORDPRESS</button>
-                    <div id="status-{{ loop.index }}" class="ms-3 small"></div>
-                </div>
+                <button class="btn btn-success btn-sm" onclick="publishToWP({{ loop.index }})">🚀 WYŚLIJ DO WORDPRESS</button>
+                <span id="status-{{ loop.index }}" class="ms-3 small"></span>
             </div>
         </div>
         {% endfor %}
@@ -82,7 +76,7 @@ HTML_TEMPLATE = """
             const text = document.getElementById(`raw-${id}`).innerText;
             
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Gemini pracuje...';
+            btn.innerHTML = '⏳ Gemini pracuje...';
 
             try {
                 const response = await fetch('/run_ai_server', {
@@ -92,14 +86,12 @@ HTML_TEMPLATE = """
                 });
 
                 const data = await response.json();
-                
                 if (!response.ok) throw new Error(data.error || "Błąd serwera");
 
                 document.getElementById(`ai-box-${id}`).style.display = "block";
                 document.getElementById(`ai-title-${id}`).value = data.title;
                 document.getElementById(`ai-content-${id}`).value = data.content;
                 btn.innerHTML = "✅ Gotowe";
-                btn.className = "btn btn-outline-secondary btn-sm mt-2";
             } catch (e) {
                 alert("Błąd: " + e.message);
                 btn.disabled = false;
@@ -109,9 +101,7 @@ HTML_TEMPLATE = """
 
         async function publishToWP(id) {
             const status = document.getElementById(`status-${id}`);
-            status.innerHTML = "Wysyłanie...";
-            status.className = "ms-3 small text-info";
-
+            status.innerText = "Wysyłanie...";
             try {
                 const res = await fetch('/publish', {
                     method: 'POST',
@@ -121,17 +111,8 @@ HTML_TEMPLATE = """
                         ai_content: document.getElementById(`ai-content-${id}`).value
                     })
                 });
-
-                if (res.ok) {
-                    status.innerHTML = "✅ Wysłano jako szkic!";
-                    status.className = "ms-3 small text-success";
-                } else {
-                    throw new Error();
-                }
-            } catch (e) {
-                status.innerHTML = "❌ Błąd WordPressa";
-                status.className = "ms-3 small text-danger";
-            }
+                status.innerText = res.ok ? "✅ Wysłano!" : "❌ Błąd WP";
+            } catch (e) { status.innerText = "❌ Błąd sieci"; }
         }
     </script>
 </body>
@@ -151,14 +132,13 @@ def index():
         try:
             r = requests.get(s["url"], headers=headers, timeout=10)
             soup = BeautifulSoup(r.text, 'html.parser')
-            # Szukamy linków do artykułów (długie linki z domeny)
             links = []
             for a in soup.find_all('a', href=True):
                 href = a['href']
                 if s["domain"] in href and len(href) > 40 and "/page/" not in href:
                     links.append(urljoin(s["url"], href))
             
-            for l in list(dict.fromkeys(links))[:4]: # Max 4 z każdego źródła
+            for l in list(dict.fromkeys(links))[:4]:
                 try:
                     res = requests.get(l, headers=headers, timeout=7)
                     asoup = BeautifulSoup(res.text, 'html.parser')
@@ -166,8 +146,7 @@ def index():
                     if not title: continue
                     
                     ctag = asoup.find('article') or asoup.find('div', class_='entry-content') or asoup.find('div', class_='td-post-content')
-                    content = ctag.get_text(separator=' ', strip=True) if ctag else "Brak treści źródłowej."
-                    
+                    content = ctag.get_text(separator=' ', strip=True) if ctag else "Brak treści."
                     all_news.append({"title": title, "raw_content": content[:1500], "url": l, "source": s["domain"]})
                 except: continue
         except: continue
@@ -177,43 +156,34 @@ def index():
 @app.route('/run_ai_server', methods=['POST'])
 def run_ai_server():
     data = request.json
-    # Prompt wymuszający unikalny styl i format JSON
     prompt = (
-        f"Jesteś redaktorem metalowym. Na podstawie newsa: '{data['title']}' "
-        f"i treści: '{data['text']}', przygotuj nowy, unikalny artykuł. "
-        f"Używaj luźnego, branżowego języka. "
-        f"Zwróć wynik WYŁĄCZNIE jako czysty JSON w formacie: "
-        f"{{\"title\": \"nowy tytuł\", \"content\": \"treść w HTML\"}}"
+        f"Jesteś redaktorem portalu o muzyce metalowej. Na podstawie newsa: '{data['title']}' "
+        f"i treści: '{data['text']}', napisz nowy, całkowicie unikalny artykuł ze wszystkimi dostępnymi informacjami. Używaj dynamicznego, ale nieprzesadnego języka. "
+        f"Zwróć wynik WYŁĄCZNIE jako czysty JSON: "
+        f"{{\"title\": \"nowy tytuł\", \"content\": \"treść w HTML (używaj <p>)\"}}"
     )
     
     try:
         response = model.generate_content(prompt)
-        # Sprzątanie odpowiedzi Gemini (usuwanie markdowna)
         raw_text = response.text.strip()
-        if "```json" in raw_text:
-            raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_text:
-            raw_text = raw_text.split("```")[1].strip()
+        
+        # Usuwanie markdowna ```json ... ```
+        if "{" in raw_text:
+            start = raw_text.find("{")
+            end = raw_text.rfind("}") + 1
+            raw_text = raw_text[start:end]
             
         return jsonify(json.loads(raw_text))
     except Exception as e:
-        print(f"BŁĄD AI: {str(e)}")
         return jsonify({"error": f"Błąd Gemini: {str(e)}"}), 500
 
 @app.route('/publish', methods=['POST'])
 def publish():
     data = request.json
     auth = (os.environ.get("WP_USER"), os.environ.get("WP_APP_PASSWORD"))
-    payload = {
-        "title": data['ai_title'],
-        "content": data['ai_content'],
-        "status": "draft"
-    }
-    try:
-        r = requests.post(os.environ.get("WP_URL"), auth=auth, json=payload, timeout=10)
-        return jsonify({"ok": True}) if r.status_code == 201 else (jsonify({"error": "WP error"}), 400)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    payload = {"title": data['ai_title'], "content": data['ai_content'], "status": "draft"}
+    r = requests.post(os.environ.get("WP_URL"), auth=auth, json=payload, timeout=10)
+    return jsonify({"ok": True}) if r.status_code == 201 else (jsonify({"error": "WP error"}), 400)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT)
