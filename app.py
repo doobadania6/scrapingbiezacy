@@ -1,4 +1,41 @@
-import os
+@app.route('/sources', methods=['GET', 'POST', 'DELETE'])
+def manage_sources():
+    """Zarządzaj źródłami scrapowania"""
+    try:
+        if request.method == 'GET':
+            sources = load_sources()
+            return jsonify({"sources": sources})
+        
+        elif request.method == 'POST':
+            data = request.json
+            url = data.get('url', '').strip()
+            domain = data.get('domain', '').strip()
+            
+            if not url or not domain:
+                return jsonify({"error": "URL i domain są wymagane"}), 400
+            
+            sources = load_sources()
+            # Sprawdź duplikaty
+            if any(s['domain'] == domain for s in sources):
+                return jsonify({"error": "Źródło z taką domeną już istnieje"}), 400
+            
+            sources.append({"url": url, "domain": domain})
+            save_sources(sources)
+            return jsonify({"success": True, "sources": sources})
+        
+        elif request.method == 'DELETE':
+            data = request.json
+            domain = data.get('domain', '').strip()
+            
+            sources = load_sources()
+            sources = [s for s in sources if s['domain'] != domain]
+            save_sources(sources)
+            return jsonify({"success": True, "sources": sources})
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/publish', methods=['POST'])import os
 import json
 import requests
 from flask import Flask, render_template_string, request, jsonify
@@ -12,6 +49,30 @@ load_dotenv()
 
 app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
+
+# Przechowuj źródła w pamięci (lub w pliku)
+SOURCES_FILE = "sources.json"
+
+def load_sources():
+    """Załaduj źródła z pliku JSON"""
+    if os.path.exists(SOURCES_FILE):
+        try:
+            with open(SOURCES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return [
+                {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
+                {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
+            ]
+    return [
+        {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
+        {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
+    ]
+
+def save_sources(sources):
+    """Zapisz źródła do pliku JSON"""
+    with open(SOURCES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(sources, f, ensure_ascii=False, indent=2)
 
 # --- KONFIGURACJA KLIENTA GEMINI ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -180,6 +241,98 @@ HTML_TEMPLATE = """
             border-radius: 10px !important;
         }
         .loading { opacity: 0.6; pointer-events: none; }
+        .settings-panel {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            height: 100vh;
+            background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%);
+            border-left: 1px solid rgba(255,255,255,0.1);
+            padding: 30px;
+            overflow-y: auto;
+            transition: right 0.3s ease;
+            z-index: 1000;
+        }
+        .settings-panel.open { right: 0; }
+        .settings-panel h2 {
+            font-size: 1.5rem;
+            margin-bottom: 24px;
+            color: #64c8ff;
+        }
+        .settings-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .source-item {
+            background: rgba(255,255,255,0.05);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+        .source-item button {
+            background: rgba(239,68,68,0.2);
+            border: none;
+            color: #ef4444;
+            padding: 4px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .source-form {
+            background: rgba(100,200,255,0.1);
+            padding: 16px;
+            border-radius: 10px;
+            border: 1px solid rgba(100,200,255,0.2);
+        }
+        .source-form input {
+            width: 100%;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            color: #e8e8e8;
+        }
+        .source-form button {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #64c8ff 0%, #3a9fcc 100%);
+            border: none;
+            color: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .settings-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #64c8ff 0%, #3a9fcc 100%);
+            border: none;
+            border-radius: 50%;
+            color: #fff;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(100,200,255,0.3);
+            transition: all 0.3s ease;
+        }
+        .settings-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 15px 40px rgba(100,200,255,0.4);
+        }
     </style>
 </head>
 <body>
@@ -252,6 +405,86 @@ HTML_TEMPLATE = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function toggleSettings() {
+            document.getElementById('settings-panel').classList.toggle('open');
+        }
+
+        async function loadSources() {
+            try {
+                const res = await fetch('/sources');
+                const data = await res.json();
+                const list = document.getElementById('sources-list');
+                list.innerHTML = '';
+                
+                data.sources.forEach(source => {
+                    const item = document.createElement('div');
+                    item.className = 'source-item';
+                    item.innerHTML = `
+                        <div>
+                            <strong>${source.domain}</strong><br>
+                            <small style="color: #888;">${source.url}</small>
+                        </div>
+                        <button onclick="deleteSource('${source.domain}')">Usuń</button>
+                    `;
+                    list.appendChild(item);
+                });
+            } catch (e) {
+                console.error('Błąd ładowania źródeł:', e);
+            }
+        }
+
+        async function addSource() {
+            const url = document.getElementById('new-url').value.trim();
+            const domain = document.getElementById('new-domain').value.trim();
+            
+            if (!url || !domain) {
+                alert('Wypełnij oba pola!');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/sources', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ url, domain })
+                });
+                
+                const data = await res.json();
+                if (data.error) {
+                    alert('Błąd: ' + data.error);
+                } else {
+                    document.getElementById('new-url').value = '';
+                    document.getElementById('new-domain').value = '';
+                    loadSources();
+                    alert('✅ Źródło dodane! Odśwież stronę, aby pobrać artykuły.');
+                }
+            } catch (e) {
+                alert('Błąd połączenia: ' + e.message);
+            }
+        }
+
+        async function deleteSource(domain) {
+            if (!confirm('Czy na pewno usunąć to źródło?')) return;
+            
+            try {
+                const res = await fetch('/sources', {
+                    method: 'DELETE',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ domain })
+                });
+                
+                const data = await res.json();
+                if (data.success) {
+                    loadSources();
+                    alert('✅ Źródło usunięte!');
+                }
+            } catch (e) {
+                alert('Błąd: ' + e.message);
+            }
+        }
+
+        // Załaduj źródła na starcie
+        loadSources();
         async function generateNews(id) {
             const btn = event.target;
             const originalContent = document.getElementById(`original-${id}`).innerText;
@@ -320,10 +553,7 @@ HTML_TEMPLATE = """
 def index():
     all_news = []
     headers = {'User-Agent': 'Mozilla/5.0'}
-    sources = [
-        {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
-        {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
-    ]
+    sources = load_sources()
     
     for s in sources:
         try:
@@ -357,8 +587,6 @@ def debug_models():
         return jsonify({"available_models": models})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-@app.route('/generate', methods=['POST'])
 def generate():
     data = request.json
     prompt = (
@@ -410,6 +638,4 @@ def publish():
             return jsonify({"error": f"WP error: {r.status_code}"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=False)
