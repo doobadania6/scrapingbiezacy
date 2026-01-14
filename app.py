@@ -121,6 +121,15 @@ HTML_TEMPLATE = """
 </html>
 """
 
+@app.route('/debug-models', methods=['GET'])
+def debug_models():
+    """Endpoint do debugowania dostępnych modeli"""
+    try:
+        models = [m.name for m in genai.list_models()]
+        return jsonify({"available_models": models})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/')
 def index():
     all_news = []
