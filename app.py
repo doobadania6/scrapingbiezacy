@@ -10,12 +10,12 @@ app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
 
 # --- KONFIGURACJA AI ---
+# Używamy bezpośredniego klucza i stabilnego modelu gemini-pro
 GEMINI_API_KEY = "AIzaSyB1U0Vhm1wLD6RbNovPhAHDJPB_2Yg6Rq4"
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Używamy pełnej ścieżki modelu, aby uniknąć błędu 404
-MODEL_NAME = 'models/gemini-1.5-flash-latest'
-model = genai.GenerativeModel(MODEL_NAME)
+# gemini-pro to najbezpieczniejszy wybór, dostępny wszędzie
+model = genai.GenerativeModel('gemini-pro')
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -23,22 +23,22 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal News Engine v6.2</title>
+    <title>Metal News Engine v6.3</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #0d0d0d; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
         .article-card { background: #1a1a1a; border-radius: 12px; padding: 20px; margin-bottom: 25px; border: 1px solid #333; }
-        .ai-box { display: none; background: #222; border: 1px solid #444; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #6200ea; }
+        .ai-box { display: none; background: #222; border: 1px solid #444; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #ff3d00; }
         textarea { background: #000 !important; color: #0f0 !important; font-family: monospace; border: 1px solid #555 !important; }
-        .btn-gemini { background-color: #6200ea; border: none; color: white; font-weight: bold; }
+        .btn-gemini { background-color: #ff3d00; border: none; color: white; font-weight: bold; }
         .badge-source { font-size: 0.7rem; background: #333; color: #ff3d00; padding: 5px 10px; border-radius: 5px; text-transform: uppercase; }
     </style>
 </head>
 <body class="container py-5">
     <header class="text-center mb-5">
-        <h1 class="display-5 fw-bold">🤘 METAL NEWS <span style="color: #ff3d00;">AI</span></h1>
-        <p class="text-muted">Wersja 6.2 (Stabilny Model Flash)</p>
-        <button onclick="location.reload()" class="btn btn-outline-light btn-sm">Skanuj portale</button>
+        <h1 class="display-5 fw-bold">🤘 METAL NEWS <span style="color: #ff3d00;">PRO</span></h1>
+        <p class="text-muted">Wersja 6.3 (Stabilny Model Pro)</p>
+        <button onclick="location.reload()" class="btn btn-outline-light btn-sm">Odśwież newsy</button>
     </header>
     
     <div id="news-feed">
@@ -46,12 +46,12 @@ HTML_TEMPLATE = """
         <div class="article-card">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="badge-source">{{ art.source }}</span>
-                <a href="{{ art.url }}" target="_blank" class="text-muted small">Oryginał ↗</a>
+                <a href="{{ art.url }}" target="_blank" class="text-muted small">Źródło ↗</a>
             </div>
             <h3 id="title-{{ loop.index }}">{{ art.title }}</h3>
             <div style="display:none" id="raw-{{ loop.index }}">{{ art.raw_content }}</div>
             
-            <button class="btn btn-gemini btn-sm mt-2" onclick="processWithAI({{ loop.index }})">✨ PRZERÓB PRZEZ AI</button>
+            <button class="btn btn-gemini btn-sm mt-2" onclick="processWithAI({{ loop.index }})">✨ GENERUJ TEKST AI</button>
             
             <div class="ai-box" id="ai-box-{{ loop.index }}">
                 <div class="mb-2">
@@ -62,7 +62,7 @@ HTML_TEMPLATE = """
                     <label class="small text-muted">Treść (HTML):</label>
                     <textarea id="ai-content-{{ loop.index }}" class="form-control" rows="10"></textarea>
                 </div>
-                <button class="btn btn-success btn-sm" onclick="publishToWP({{ loop.index }})">🚀 WYŚLIJ DO WORDPRESS</button>
+                <button class="btn btn-success btn-sm" onclick="publishToWP({{ loop.index }})">🚀 WYŚLIJ DO WP</button>
                 <span id="status-{{ loop.index }}" class="ms-3 small"></span>
             </div>
         </div>
@@ -76,7 +76,7 @@ HTML_TEMPLATE = """
             const text = document.getElementById(`raw-${id}`).innerText;
             
             btn.disabled = true;
-            btn.innerHTML = '⏳ Gemini pracuje...';
+            btn.innerHTML = '⏳ Trwa generowanie (Model Pro)...';
 
             try {
                 const response = await fetch('/run_ai_server', {
@@ -86,12 +86,12 @@ HTML_TEMPLATE = """
                 });
 
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Błąd serwera");
+                if (!response.ok) throw new Error(data.error || "Błąd AI");
 
                 document.getElementById(`ai-box-${id}`).style.display = "block";
                 document.getElementById(`ai-title-${id}`).value = data.title;
                 document.getElementById(`ai-content-${id}`).value = data.content;
-                btn.innerHTML = "✅ Gotowe";
+                btn.innerHTML = "✅ Wygenerowano";
             } catch (e) {
                 alert("Błąd: " + e.message);
                 btn.disabled = false;
@@ -111,7 +111,7 @@ HTML_TEMPLATE = """
                         ai_content: document.getElementById(`ai-content-${id}`).value
                     })
                 });
-                status.innerText = res.ok ? "✅ Wysłano!" : "❌ Błąd WP";
+                status.innerText = res.ok ? "✅ Opublikowano!" : "❌ Błąd WordPressa";
             } catch (e) { status.innerText = "❌ Błąd sieci"; }
         }
     </script>
@@ -122,11 +122,8 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     all_news = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    sources = [
-        {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
-        {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
-    ]
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    sources = [{"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"}, {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}]
     
     for s in sources:
         try:
@@ -134,9 +131,8 @@ def index():
             soup = BeautifulSoup(r.text, 'html.parser')
             links = []
             for a in soup.find_all('a', href=True):
-                href = a['href']
-                if s["domain"] in href and len(href) > 40 and "/page/" not in href:
-                    links.append(urljoin(s["url"], href))
+                if s["domain"] in a['href'] and len(a['href']) > 45:
+                    links.append(urljoin(s["url"], a['href']))
             
             for l in list(dict.fromkeys(links))[:4]:
                 try:
@@ -144,38 +140,34 @@ def index():
                     asoup = BeautifulSoup(res.text, 'html.parser')
                     title = asoup.find('h1').get_text(strip=True) if asoup.find('h1') else None
                     if not title: continue
-                    
-                    ctag = asoup.find('article') or asoup.find('div', class_='entry-content') or asoup.find('div', class_='td-post-content')
-                    content = ctag.get_text(separator=' ', strip=True) if ctag else "Brak treści."
-                    all_news.append({"title": title, "raw_content": content[:1500], "url": l, "source": s["domain"]})
+                    ctag = asoup.find('article') or asoup.find('div', class_='entry-content')
+                    content = ctag.get_text(separator=' ', strip=True)[:1200] if ctag else "Brak tekstu"
+                    all_news.append({"title": title, "raw_content": content, "url": l, "source": s["domain"]})
                 except: continue
         except: continue
-            
     return render_template_string(HTML_TEMPLATE, articles=all_news)
 
 @app.route('/run_ai_server', methods=['POST'])
 def run_ai_server():
     data = request.json
     prompt = (
-        f"Jesteś redaktorem portalu o muzyce metalowej. Na podstawie newsa: '{data['title']}' "
-        f"i treści: '{data['text']}', napisz nowy, całkowicie unikalny artykuł ze wszystkimi dostępnymi informacjami. Używaj dynamicznego, ale nieprzesadnego języka. "
-        f"Zwróć wynik WYŁĄCZNIE jako czysty JSON: "
-        f"{{\"title\": \"nowy tytuł\", \"content\": \"treść w HTML (używaj <p>)\"}}"
+        f"Jesteś redaktorem portalu metalowego. Napisz unikalny news na podstawie tytułu: '{data['title']}' "
+        f"i treści: '{data['text']}'. Styl mroczny i energiczny. "
+        f"Zwróć wynik jako JSON: {{\"title\": \"...\", \"content\": \"... (w HTML)\"}}"
     )
     
     try:
         response = model.generate_content(prompt)
+        # Gemini-pro czasem zwraca czysty tekst bez markdowna, obsłużmy to:
         raw_text = response.text.strip()
         
-        # Usuwanie markdowna ```json ... ```
+        # Ekstrakcja JSON jeśli AI dodało komentarze
         if "{" in raw_text:
-            start = raw_text.find("{")
-            end = raw_text.rfind("}") + 1
-            raw_text = raw_text[start:end]
+            raw_text = raw_text[raw_text.find("{"):raw_text.rfind("}")+1]
             
         return jsonify(json.loads(raw_text))
     except Exception as e:
-        return jsonify({"error": f"Błąd Gemini: {str(e)}"}), 500
+        return jsonify({"error": f"Model Pro mówi: {str(e)}"}), 500
 
 @app.route('/publish', methods=['POST'])
 def publish():
