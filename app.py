@@ -150,6 +150,15 @@ def index():
             continue
     return render_template_string(HTML_TEMPLATE, articles=all_news)
 
+@app.route('/debug-models', methods=['GET'])
+def debug_models():
+    """Endpoint do debugowania dostępnych modeli"""
+    try:
+        models = [m.name for m in genai.list_models()]
+        return jsonify({"available_models": models})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/generate', methods=['POST'])
 def generate():
     data = request.json
@@ -161,9 +170,28 @@ def generate():
     )
     
     try:
-        # Używamy modelu dostępnego na API v1
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+        # Spróbuj modele w kolejności - od najnowszych do najstarszych
+        models_to_try = [
+            'gemini-2.0-flash',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+            'gemini-pro',
+            'gemini-pro-vision'
+        ]
+        
+        response = None
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                print(f"✅ Sukces z modelem: {model_name}")
+                break
+            except Exception as e:
+                print(f"❌ Model {model_name} niedostępny: {str(e)}")
+                continue
+        
+        if response is None:
+            raise Exception("Żaden z dostępnych modeli nie zadziałał")
         
         text = response.text
         
