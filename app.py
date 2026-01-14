@@ -1,90 +1,81 @@
 import os
+import json
 import requests
 from flask import Flask, render_template_string, request, jsonify
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+import google.generativeai as genai
 
 app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
 
-# TWÓJ KLUCZ GEMINI
+# KONFIGURACJA AI NA SERWERZE
 GEMINI_API_KEY = "AIzaSyB1U0Vhm1wLD6RbNovPhAHDJPB_2Yg6Rq4"
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Metal News Engine v5</title>
+    <title>Metal News Engine v6</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #0d0d0d; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
         .article-card { background: #1a1a1a; border-radius: 12px; padding: 20px; margin-bottom: 25px; border: 1px solid #333; }
         .ai-box { display: none; background: #222; border: 1px solid #444; padding: 15px; border-radius: 8px; margin-top: 15px; }
         textarea { background: #000 !important; color: #0f0 !important; font-family: monospace; border: 1px solid #555 !important; }
-        .btn-gemini { background-color: #6200ea; border: none; color: white; padding: 8px 20px; }
-        .btn-gemini:hover { background-color: #3700b3; }
+        .btn-gemini { background-color: #6200ea; border: none; color: white; }
     </style>
 </head>
 <body class="container py-5">
-    <h1 class="text-center mb-5">🤘 METAL <span style="color: #ff3d00;">ENGINE</span> V5</h1>
+    <h1 class="text-center mb-5">🤘 METAL ENGINE <span style="color: #ff3d00;">V6</span></h1>
     
     <div id="news-feed">
         {% for art in articles %}
         <div class="article-card">
             <span class="badge bg-dark text-danger mb-2">{{ art.source }}</span>
             <h3 id="title-{{ loop.index }}">{{ art.title }}</h3>
-            
             <div style="display:none" id="raw-{{ loop.index }}">{{ art.raw_content }}</div>
             
-            <button class="btn btn-gemini btn-sm mt-2" onclick="askGemini({{ loop.index }})">✨ PRZERÓB PRZEZ AI</button>
+            <button class="btn btn-gemini btn-sm mt-2" onclick="askGeminiServer({{ loop.index }})">✨ PRZERÓB PRZEZ AI</button>
             
             <div class="ai-box" id="ai-box-{{ loop.index }}">
-                <label class="small text-muted">Nowy Tytuł:</label>
                 <input type="text" id="ai-title-{{ loop.index }}" class="form-control mb-2 bg-dark text-white border-secondary">
-                <label class="small text-muted">Treść (HTML):</label>
                 <textarea id="ai-content-{{ loop.index }}" class="form-control" rows="8"></textarea>
                 <button class="btn btn-success btn-sm mt-3" onclick="publishToWP({{ loop.index }})">🚀 WYŚLIJ DO WP</button>
-                <span id="status-{{ loop.index }}" class="ms-2 small"></span>
+                <span id="status-{{ loop.index }}" class="ms-2 small text-warning"></span>
             </div>
         </div>
         {% endfor %}
     </div>
 
     <script>
-        const GEMINI_KEY = "{{ gemini_key }}";
-
-        async function askGemini(id) {
-            const btn = document.querySelector(`#art-card-${id} .btn-gemini`) || event.target;
+        async function askGeminiServer(id) {
+            const btn = event.target;
             const title = document.getElementById(`title-${id}`).innerText;
-            const text = document.getElementById(`raw-${id}`).innerText || title; // Fallback do tytułu
+            const text = document.getElementById(`raw-${id}`).innerText;
             
             btn.disabled = true;
-            btn.innerHTML = "⏳ Gemini przetwarza...";
-
-            const prompt = `Jesteś redaktorem portalu metalowego. Na podstawie newsa: "${title}" i treści: "${text.substring(0,1000)}", przygotuj unikalny news. Zwróć wynik WYŁĄCZNIE jako czysty JSON: {"title": "fajny tytuł", "content": "tresc w html"}`;
+            btn.innerHTML = "⏳ Serwer przetwarza...";
 
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
+                const response = await fetch('/run_ai_server', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    body: JSON.stringify({ title: title, text: text })
                 });
 
                 const data = await response.json();
-                let resultText = data.candidates[0].content.parts[0].text;
-                
-                // Super-czyszczenie JSONa
-                resultText = resultText.replace(/```json/g, "").replace(/```/g, "").trim();
-                const final = JSON.parse(resultText);
+                if (data.error) throw new Error(data.error);
 
                 document.getElementById(`ai-box-${id}`).style.display = "block";
-                document.getElementById(`ai-title-${id}`).value = final.title;
-                document.getElementById(`ai-content-${id}`).value = final.content;
+                document.getElementById(`ai-title-${id}`).value = data.title;
+                document.getElementById(`ai-content-${id}`).value = data.content;
                 btn.innerHTML = "✅ Gotowe";
             } catch (e) {
-                console.error("Błąd Gemini:", e);
-                alert("Wystąpił błąd AI. Sprawdź konsolę (F12) lub spróbuj ponownie.");
+                alert("Błąd: " + e.message);
                 btn.disabled = false;
                 btn.innerHTML = "❌ Błąd (Ponów)";
             }
@@ -93,17 +84,15 @@ HTML_TEMPLATE = """
         async function publishToWP(id) {
             const status = document.getElementById(`status-${id}`);
             status.innerText = "Wysyłanie...";
-            try {
-                const res = await fetch('/publish', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        ai_title: document.getElementById(`ai-title-${id}`).value,
-                        ai_content: document.getElementById(`ai-content-${id}`).value
-                    })
-                });
-                status.innerText = res.ok ? "✅ Wysłano!" : "❌ Błąd WP";
-            } catch (e) { status.innerText = "❌ Błąd sieci"; }
+            const res = await fetch('/publish', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    ai_title: document.getElementById(`ai-title-${id}`).value,
+                    ai_content: document.getElementById(`ai-content-${id}`).value
+                })
+            });
+            status.innerText = res.ok ? "✅ Wysłano!" : "❌ Błąd WP";
         }
     </script>
 </body>
@@ -113,45 +102,44 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     all_news = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'}
-    sources = [
-        {"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"},
-        {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}
-    ]
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    sources = [{"url": "https://kvlt.pl/newsy/", "domain": "kvlt.pl"}, {"url": "https://chaosvault.com/category/newsy/", "domain": "chaosvault.com"}]
     
     for s in sources:
         try:
             r = requests.get(s["url"], headers=headers, timeout=10)
             soup = BeautifulSoup(r.text, 'html.parser')
-            links = []
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                if s["domain"] in href and len(href) > 40 and "/page/" not in href:
-                    links.append(urljoin(s["url"], href))
-            
-            for l in list(dict.fromkeys(links))[:4]:
+            links = [urljoin(s["url"], a['href']) for a in soup.find_all('a', href=True) if s["domain"] in a['href'] and len(a['href']) > 40][:3]
+            for l in list(dict.fromkeys(links)):
                 try:
-                    res = requests.get(l, headers=headers, timeout=7)
+                    res = requests.get(l, headers=headers, timeout=5)
                     asoup = BeautifulSoup(res.text, 'html.parser')
-                    title = asoup.find('h1').get_text(strip=True) if asoup.find('h1') else None
-                    if not title: continue
-                    
-                    # Szukanie treści - różne selektory
-                    content_tag = asoup.find('article') or asoup.find('div', class_='entry-content') or asoup.find('div', class_='td-post-content')
-                    content = content_tag.get_text(separator=' ', strip=True) if content_tag else "Brak treści źródłowej (użyj tytułu do generowania)"
-                    
-                    all_news.append({"title": title, "raw_content": content[:1500], "url": l, "source": s["domain"]})
+                    title = asoup.find('h1').text.strip() if asoup.find('h1') else None
+                    ctag = asoup.find('article') or asoup.find('div', class_='entry-content')
+                    content = ctag.get_text(strip=True)[:1000] if ctag else "Brak treści"
+                    if title: all_news.append({"title": title, "raw_content": content, "source": s["domain"]})
                 except: continue
         except: continue
-            
-    return render_template_string(HTML_TEMPLATE, articles=all_news, gemini_key=GEMINI_API_KEY)
+    return render_template_string(HTML_TEMPLATE, articles=all_news)
+
+@app.route('/run_ai_server', methods=['POST'])
+def run_ai_server():
+    data = request.json
+    prompt = f"Jesteś redaktorem metalowym. Przeredaguj news: {data['title']}. Treść: {data['text']}. Zwróć TYLKO JSON: {{\"title\": \"...\", \"content\": \"...\"}}"
+    try:
+        response = model.generate_content(prompt)
+        clean_text = response.text.replace('```json', '').replace('```', '').strip()
+        return jsonify(json.loads(clean_text))
+    except Exception as e:
+        print(f"BŁĄD GEMINI: {str(e)}") # To zobaczysz w logach Rendera
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/publish', methods=['POST'])
 def publish():
     data = request.json
     auth = (os.environ.get("WP_USER"), os.environ.get("WP_APP_PASSWORD"))
-    payload = {"title": data['ai_title'], "content": data['ai_content'], "status": "draft"}
-    r = requests.post(os.environ.get("WP_URL"), auth=auth, json=payload)
+    p = {"title": data['ai_title'], "content": data['ai_content'], "status": "draft"}
+    r = requests.post(os.environ.get("WP_URL"), auth=auth, json=p)
     return jsonify({"ok": True}) if r.status_code == 201 else (jsonify({"err": True}), 400)
 
 if __name__ == '__main__':
