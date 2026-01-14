@@ -128,10 +128,10 @@ def generate():
         "Zwróć wynik jako JSON: {\"title\": \"...\", \"content\": \"... (HTML)\"}"
     )
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-exp", 
-            contents=prompt
-        )
+response = client.models.generate_content(
+    model="gemini-1.5-flash", 
+    contents=prompt
+)
         text = response.text
         # Naprawa JSONa
         if "{" in text:
