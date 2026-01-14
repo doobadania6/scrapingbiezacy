@@ -179,28 +179,9 @@ def generate():
     )
     
     try:
-        # Spróbuj modele w kolejności - od najnowszych do najstarszych
-        models_to_try = [
-            'gemini-2.0-flash',
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
-            'gemini-pro',
-            'gemini-pro-vision'
-        ]
-        
-        response = None
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
-                print(f"✅ Sukces z modelem: {model_name}")
-                break
-            except Exception as e:
-                print(f"❌ Model {model_name} niedostępny: {str(e)}")
-                continue
-        
-        if response is None:
-            raise Exception("Żaden z dostępnych modeli nie zadziałał")
+        # Używamy najnowszego dostępnego modelu
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
         
         text = response.text
         
